@@ -3,11 +3,11 @@ name: Build APK
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:  # Permite executar manualmente
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # Mudando para latest (mais disponível)
+    runs-on: ubuntu-latest
     
     steps:
     - name: 📥 Baixar código
@@ -18,18 +18,84 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: 📦 Instalar dependências
+    - name: 📦 Instalar dependências do sistema
       run: |
         sudo apt-get update
-        sudo apt-get install -y git unzip python3-pip openjdk-17-jdk
-        pip install --upgrade pip
-        pip install cython buildozer
+        sudo apt-get install -y \
+          git \
+          unzip \
+          python3-pip \
+          python3-dev \
+          autoconf \
+          libtool \
+          pkg-config \
+          zlib1g-dev \
+          libncurses5-dev \
+          libncursesw5-dev \
+          cmake \
+          libffi-dev \
+          libssl-dev \
+          openjdk-17-jdk \
+          openjdk-17-jre \
+          wget
+
+    - name: 📦 Instalar Python packages
+      run: |
+        python -m pip install --upgrade pip
+        pip install cython
+        pip install buildozer
 
     - name: 📁 Extrair imagens
-      run: unzip -o images.zip
+      run: |
+        unzip -o images.zip -d .
+
+    - name: ☕ Configurar JAVA_HOME
+      run: |
+        echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+
+    - name: 🔧 Instalar Android SDK e Build Tools (MÉTODO GARANTIDO)
+      run: |
+        # Criar diretório do SDK
+        mkdir -p $HOME/android-sdk
+        cd $HOME/android-sdk
+        
+        # Baixar command line tools
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip -o commandlinetools-linux-*.zip
+        
+        # Organizar estrutura
+        mkdir -p cmdline-tools/latest
+        mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
+        
+        # Configurar PATH
+        echo "export ANDROID_HOME=$HOME/android-sdk" >> $HOME/.bashrc
+        echo "export PATH=\$PATH:\$ANDROID_HOME/cmdline-tools/latest/bin:\$ANDROID_HOME/platform-tools:\$ANDROID_HOME/build-tools/34.0.0" >> $HOME/.bashrc
+        source $HOME/.bashrc
+        
+        # Adicionar ao PATH do GitHub Actions
+        echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+        
+        # Aceitar TODAS as licenças automaticamente (FORÇADO)
+        yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        
+        # Instalar build-tools específicas (versão estável)
+        $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33"
+        $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.2" "build-tools;34.0.0"
+        
+        # Adicionar build-tools ao PATH
+        echo "$HOME/android-sdk/build-tools/33.0.2" >> $GITHUB_PATH
+        echo "$HOME/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
+
+    - name: 🔍 Verificar instalação do Aidl
+      run: |
+        echo "🔍 Procurando aidl..."
+        find $HOME/android-sdk -name "aidl" -type f 2>/dev/null || echo "❌ Aidl não encontrado"
+        echo "📋 PATH: $PATH"
+        echo "📋 ANDROID_HOME: $ANDROID_HOME"
 
     - name: 🛠️ Compilar APK
-      run: buildozer android debug
+      run: |
+        buildozer android debug
 
     - name: 📤 Upload do APK
       uses: actions/upload-artifact@v4
