@@ -49,48 +49,58 @@ jobs:
       run: |
         unzip -o images.zip -d .
 
-    - name: 🔧 Configurar Android SDK COM VERSÃO FIXA
+    - name: 🔧 Configurar Android SDK (CAMINHO CORRIGIDO)
       run: |
         # Criar estrutura de diretórios
-        mkdir -p $HOME/android-sdk/cmdline-tools
+        mkdir -p $HOME/android-sdk
         cd $HOME/android-sdk
         
         # Baixar command line tools
-        wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-        unzip -o commandlinetools-linux-*.zip
-        mv cmdline-tools cmdline-tools/latest 2>/dev/null || true
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        unzip -q commandlinetools-linux-*.zip
+        
+        # Criar a estrutura correta (cmdline-tools/latest)
         mkdir -p cmdline-tools/latest
-        mv * cmdline-tools/latest/ 2>/dev/null || true
+        mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
+        # Mover tudo para o lugar certo
+        rsync -a cmdline-tools/latest/ cmdline-tools/latest/ 2>/dev/null || true
+        
+        # Verificar se o sdkmanager existe
+        ls -la $HOME/android-sdk/cmdline-tools/latest/bin/
         
         # Configurar PATH
         echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
         echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
         
-        # Aceitar licenças automaticamente
-        yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+        # Recarregar PATH
+        export PATH=$PATH:$HOME/android-sdk/cmdline-tools/latest/bin
         
-        # Instalar componentes com VERSÕES ESPECÍFICAS (NÃO usar RC)
+        # Aceitar licenças
+        yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        
+        # Instalar componentes com VERSÕES ESPECÍFICAS
         $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools"
         $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-33"
-        $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.2"  # Versão estável!
-        $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0"  # Versão estável!
+        $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.2"
         
         # Adicionar build-tools ao PATH
         echo "$HOME/android-sdk/build-tools/33.0.2" >> $GITHUB_PATH
-        echo "$HOME/android-sdk/build-tools/34.0.0" >> $GITHUB_PATH
 
-    - name: 🔍 Verificar aidl
+    - name: 🔍 Verificar instalação
       run: |
-        echo "🔍 Procurando aidl..."
-        find $HOME/android-sdk -name "aidl" -type f | head -5
-        echo "📋 Build-tools instaladas:"
-        ls -la $HOME/android-sdk/build-tools/
+        echo "📂 Conteúdo do ANDROID_HOME:"
+        ls -la $ANDROID_HOME
+        echo ""
+        echo "📂 Build-tools:"
+        ls -la $ANDROID_HOME/build-tools/ 2>/dev/null || echo "Build-tools ainda não instaladas"
+        echo ""
+        echo "🔍 Procurando aidl:"
+        find $ANDROID_HOME -name "aidl" -type f 2>/dev/null || echo "Aidl não encontrado ainda"
 
     - name: 🛠️ Compilar APK
       run: |
-        # Configurar buildozer para usar a versão correta
         export ANDROID_HOME=$HOME/android-sdk
-        export PATH=$PATH:$ANDROID_HOME/build-tools/33.0.2
+        export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/build-tools/33.0.2
         buildozer android debug
 
     - name: 📤 Upload do APK
