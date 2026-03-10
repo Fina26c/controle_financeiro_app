@@ -37,8 +37,7 @@ jobs:
           libssl-dev \
           openjdk-17-jdk \
           openjdk-17-jre \
-          wget \
-          rsync
+          wget
 
     - name: 📦 Instalar Python packages
       run: |
@@ -50,44 +49,59 @@ jobs:
       run: |
         unzip -o images.zip -d .
 
-    - name: 🔧 Instalar Android SDK no local que o Buildozer espera
+    - name: 🔧 Pré-configurar SDK manualmente
       run: |
-        # Criar a pasta exata que o Buildozer procura
-        mkdir -p /home/runner/.buildozer/android/platform/android-sdk
-        cd /home/runner/.buildozer/android/platform/android-sdk
+        # Criar a estrutura que o Buildozer espera
+        mkdir -p /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest
         
         # Baixar command line tools
+        cd /home/runner/.buildozer/android/platform/android-sdk
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
         unzip -q commandlinetools-linux-*.zip
         
-        # Organizar cmdline-tools
-        mkdir -p cmdline-tools/latest
+        # Mover para o local correto
         mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
         
-        # Configurar PATH
-        echo "ANDROID_HOME=/home/runner/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
-        echo "/home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+        # CRIAR LINK SIMBÓLICO para o local antigo (engana o Buildozer)
+        mkdir -p /home/runner/.buildozer/android/platform/android-sdk/tools
+        ln -sf /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/sdkmanager 2>/dev/null || true
+        mkdir -p /home/runner/.buildozer/android/platform/android-sdk/tools/bin
+        cp /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager /home/runner/.buildozer/android/platform/android-sdk/tools/bin/ 2>/dev/null || true
+
+    - name: 🔧 Configurar Android SDK
+      run: |
+        export ANDROID_HOME=/home/runner/.buildozer/android/platform/android-sdk
+        export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/tools/bin
         
-        # Aceitar licenças
-        yes | /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+        # Verificar se o sdkmanager existe
+        echo "🔍 Procurando sdkmanager:"
+        find $ANDROID_HOME -name "sdkmanager" -type f || echo "sdkmanager não encontrado"
         
-        # Instalar componentes
-        /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools"
-        /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-33"
-        /home/runner/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.2"
+        # Se encontrou em cmdline-tools, usar ele
+        SDKMANAGER_CMD=$(find $ANDROID_HOME -name "sdkmanager" -type f | head -1)
         
-        # Adicionar build-tools ao PATH
-        echo "/home/runner/.buildozer/android/platform/android-sdk/build-tools/33.0.2" >> $GITHUB_PATH
-        
-        # Verificar instalação
-        echo "📂 Pastas do SDK:"
-        ls -la /home/runner/.buildozer/android/platform/android-sdk/
-        echo ""
-        echo "🔍 Procurando aidl:"
-        find /home/runner/.buildozer/android/platform/android-sdk -name "aidl" -type f
+        if [ -n "$SDKMANAGER_CMD" ]; then
+          echo "✅ SDK Manager encontrado em: $SDKMANAGER_CMD"
+          
+          # Aceitar licenças
+          yes | $SDKMANAGER_CMD --licenses
+          
+          # Instalar componentes
+          $SDKMANAGER_CMD "platform-tools"
+          $SDKMANAGER_CMD "platforms;android-33"
+          $SDKMANAGER_CMD "build-tools;33.0.2"
+          
+          # Adicionar ao PATH
+          echo "$ANDROID_HOME/build-tools/33.0.2" >> $GITHUB_PATH
+        else
+          echo "❌ SDK Manager não encontrado!"
+          exit 1
+        fi
 
     - name: 🛠️ Compilar APK
       run: |
+        export ANDROID_HOME=/home/runner/.buildozer/android/platform/android-sdk
+        export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/tools/bin:$ANDROID_HOME/build-tools/33.0.2
         buildozer android debug
 
     - name: 📤 Upload do APK
